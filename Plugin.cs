@@ -12,29 +12,33 @@ using BepInEx.Logging;
 
 namespace TLS
 {
-    [BepInPlugin("com.tls.mod", "Tactical Laser System (TLS) Pipeline", "8.0.0")]
+    [BepInPlugin("com.tls.mod", "Tactical Laser System (TLS)", "2.2")]
     public class Plugin : BaseUnityPlugin
     {
         public static Plugin Instance;
         public static Dictionary<string, ConfigEntry<bool>> UnitConfigs = new Dictionary<string, ConfigEntry<bool>>();
+        public static ConfigEntry<float> MinRange;
         public static ManualLogSource _log;
 
         private void Awake()
         {
             Instance = this;
             _log = Logger;
-            Logger.LogInfo("Tactical Laser System (TLS) Pipeline starting...");
+            Logger.LogInfo("Tactical Laser System (TLS) starting...");
+
+            MinRange = Config.Bind("General", "Minimum Range", 50f, "Minimum distance from the muzzle before damage starts (prevents self-damage).");
+
             var harmony = new Harmony("com.tls.mod");
             try
             {
                 harmony.PatchAll();
-                Logger.LogInfo("TLS Pipeline Fully Active.");
+                Logger.LogInfo("TLS Fully Active.");
                 
                 StartCoroutine(ScannerRoutine());
             }
             catch (Exception ex)
             {
-                Logger.LogError($"Pipeline Hook failed: {ex}");
+                Logger.LogError($"TLS Hook failed: {ex}");
             }
         }
 
@@ -171,13 +175,6 @@ namespace TLS
                     if (traverse.Field("pierceDamage").FieldExists())traverse.Field("pierceDamage").SetValue(1000000f);
                 }
 
-                // Redirect target lock from specific UnitPart to the unit's root.
-                if (traverse.Field("currentTargetTransform").FieldExists())
-                {
-                    var targetTr = traverse.Field("currentTargetTransform").GetValue<Transform>();
-                    if (targetTr != null && targetTr.parent != null)
-                        traverse.Field("currentTargetTransform").SetValue(targetTr.root);
-                }
 
                 // Track whether the player is currently firing (used in Postfix gate)
                 if (traverse.Field("fireCommanded").FieldExists())
@@ -301,8 +298,8 @@ namespace TLS
             if (Physics.Raycast(origin, dir, out RaycastHit terrainHit, 15000f, _terrainMask))
                 beamLen = terrainHit.distance;
 
-            // Capsule starts 10 m ahead of the muzzle — clears own aircraft even at speed
-            Vector3 capsuleStart = origin + dir * 10f;
+            // Capsule starts at MinRange m ahead of the muzzle — clears own aircraft
+            Vector3 capsuleStart = origin + dir * Plugin.MinRange.Value;
             Vector3 beamEnd      = origin + dir * beamLen;
             int count = Physics.OverlapCapsuleNonAlloc(
                 capsuleStart, beamEnd, BEAM_RADIUS, _capsuleBuffer, _damageMask);
@@ -387,8 +384,8 @@ namespace TLS
                 if (Plugin.UnitConfigs.TryGetValue(uName, out var entry) && !entry.Value)
                     return;
 
-                // Trace 2000 meters forward of the laser barrel to see where it hits
-                Vector3 targetPoint = dirT.position + (dirT.forward * 2000f);
+                // Trace forward to see where it hits
+                Vector3 targetPoint = dirT.position + (dirT.forward * 15000f);
                 if (Physics.Raycast(dirT.position, dirT.forward, out RaycastHit hit, 15000f))
                 {
                     targetPoint = hit.point;

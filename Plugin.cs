@@ -130,7 +130,6 @@ namespace TLS
             return SanitizeUnitName(fallbackName ?? c.transform.root.name);
         }
 
-        // --- Role Identity Expansion ---
         // Caches original bool values of roleIdentity fields, keyed by unit instance ID
         private static readonly Dictionary<int, Dictionary<string, bool>> _roleCache =
             new Dictionary<int, Dictionary<string, bool>>();
@@ -294,11 +293,7 @@ namespace TLS
         }
     } // end Laser_Injector_Patch
 
-    /// <summary>
-    /// TLSBeam — volume-based damage pass using Physics.OverlapCapsuleNonAlloc.
-    /// Visual appearance is entirely native (MeshRenderer beam + native hit spark).
     /// This component only handles silent multi-target piercing damage.
-    /// </summary>
     public class TLSBeam : MonoBehaviour
     {
         public Transform  dirT;

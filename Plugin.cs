@@ -129,7 +129,94 @@ namespace TLS
 
             return SanitizeUnitName(fallbackName ?? c.transform.root.name);
         }
-    }
+
+        // --- Role Identity Expansion ---
+        // Caches original bool values of roleIdentity fields, keyed by unit instance ID
+        private static readonly Dictionary<int, Dictionary<string, bool>> _roleCache =
+            new Dictionary<int, Dictionary<string, bool>>();
+
+        private static (MonoBehaviour unit, object roleId) GetRoleIdentity(Component laserComp)
+        {
+            // Walk up the hierarchy to find the unit MonoBehaviour
+            foreach (var mb in laserComp.GetComponentsInParent<MonoBehaviour>())
+            {
+                if (!IsUnitComponent(mb)) continue;
+
+                // Get the 'definition' field/property
+                var defField = mb.GetType().GetField("definition",
+                    BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                object def = defField?.GetValue(mb);
+
+                if (def == null) continue;
+
+                // Get 'roleIdentity' from definition
+                var roleField = def.GetType().GetField("roleIdentity",
+                    BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                object roleId = roleField?.GetValue(def);
+
+                if (roleId != null) return (mb, roleId);
+            }
+            return (null, null);
+        }
+
+        public static void ExpandRoleIdentity(Component laserComp)
+        {
+            try
+            {
+                var (unit, roleId) = GetRoleIdentity(laserComp);
+                if (unit == null || roleId == null) return;
+
+                int id = unit.GetInstanceID();
+                if (_roleCache.ContainsKey(id)) return; // already expanded
+
+                // Cache and set all bool fields to true
+                var saved = new Dictionary<string, bool>();
+                var roleType = roleId.GetType();
+                foreach (var f in roleType.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
+                {
+                    if (f.FieldType != typeof(bool)) continue;
+                    saved[f.Name] = (bool)f.GetValue(roleId);
+                    f.SetValue(roleId, true);
+                }
+                foreach (var p in roleType.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
+                {
+                    if (p.PropertyType != typeof(bool) || !p.CanWrite) continue;
+                    saved["prop_" + p.Name] = (bool)p.GetValue(roleId);
+                    p.SetValue(roleId, true);
+                }
+                _roleCache[id] = saved;
+                _log.LogInfo($"[TLS] Expanded roleIdentity for '{GetUnitName(laserComp)}' ({saved.Count} flags).");
+            }
+            catch (Exception ex) { _log.LogWarning($"[TLS] ExpandRoleIdentity failed: {ex.Message}"); }
+        }
+
+        public static void RestoreRoleIdentity(Component laserComp)
+        {
+            try
+            {
+                var (unit, roleId) = GetRoleIdentity(laserComp);
+                if (unit == null || roleId == null) return;
+
+                int id = unit.GetInstanceID();
+                if (!_roleCache.TryGetValue(id, out var saved)) return;
+
+                var roleType = roleId.GetType();
+                foreach (var f in roleType.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
+                {
+                    if (f.FieldType != typeof(bool)) continue;
+                    if (saved.TryGetValue(f.Name, out bool orig)) f.SetValue(roleId, orig);
+                }
+                foreach (var p in roleType.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
+                {
+                    if (p.PropertyType != typeof(bool) || !p.CanWrite) continue;
+                    if (saved.TryGetValue("prop_" + p.Name, out bool orig)) p.SetValue(roleId, orig);
+                }
+                _roleCache.Remove(id);
+                _log.LogInfo($"[TLS] Restored roleIdentity for '{GetUnitName(laserComp)}'.");
+            }
+            catch (Exception ex) { _log.LogWarning($"[TLS] RestoreRoleIdentity failed: {ex.Message}"); }
+        }
+    } // end Plugin class
 
 
     [HarmonyPatch(typeof(Laser), "FixedUpdate")]
@@ -156,11 +243,16 @@ namespace TLS
                 }
 
                 // Per-unit config check
-                if (Plugin.UnitConfigs.TryGetValue(uName, out var entry) && !entry.Value)
+                bool tlsEnabled = !Plugin.UnitConfigs.TryGetValue(uName, out var entry) || entry.Value;
+                if (!tlsEnabled)
                 {
                     db.RestoreOriginals(traverse);
+                    Plugin.RestoreRoleIdentity(__instance);
                     return;
                 }
+
+                // Expand engagement roles so the unit can engage Air + Surface targets
+                Plugin.ExpandRoleIdentity(__instance);
 
                 // Keep ammo unlimited so the laser never runs dry
                 if (traverse.Field("ammo").FieldExists())
@@ -174,7 +266,6 @@ namespace TLS
                     if (traverse.Field("blastDamage").FieldExists()) traverse.Field("blastDamage").SetValue(1000000f);
                     if (traverse.Field("pierceDamage").FieldExists())traverse.Field("pierceDamage").SetValue(1000000f);
                 }
-
 
                 // Track whether the player is currently firing (used in Postfix gate)
                 if (traverse.Field("fireCommanded").FieldExists())
@@ -352,6 +443,21 @@ namespace TLS
 
             if (pierced > 0)
                 _log.LogInfo($"[TLS] Pierced {pierced}/{count} colliders  beamLen={beamLen:F0}m (Unit: {Plugin.GetUnitName(this)})");
+        }
+    }
+
+
+    [HarmonyPatch(typeof(Laser), "SetTarget")]
+    public static class LaserCenterMassPatch
+    {
+        public static bool Prefix(Laser __instance, Unit target)
+        {
+            ((Behaviour)(object)__instance).enabled = true;
+            var tr = Traverse.Create((object)__instance);
+            tr.Field("currentTargetTransform").SetValue(
+                (object)((target != null) ? ((Component)(object)target).transform : null));
+            tr.Field("currentTarget").SetValue((object)target);
+            return false;
         }
     }
 

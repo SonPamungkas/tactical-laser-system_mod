@@ -1,3 +1,5 @@
+<img width="953" height="504" alt="Evil Laser" src="https://github.com/user-attachments/assets/ce58c695-da87-435e-9676-07cb9182bae9" />
+
 The Problem
 Native TakeDamage runs everything through ArmorProperties, damageAtRange, and calculates decimals that it summarizes into a netFireDamage. This net value often clamps 1,000,000 damage down into single digits before passing it over the network via DamageInfo structs.
 

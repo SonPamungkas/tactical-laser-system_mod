@@ -1,0 +1,24 @@
+## Tactical Laser System - role identity manifest
+## Syntax follows the vanilla QoL corpus, see QolComboFix/decompiled/1.1.8.1/qol.commands.qol
+##   <assetName> roleIdentity  <field> modify4 <value>   -> UnitDefinition.roleIdentity (target selection)
+##   <assetName> effectiveness <field> modify4 <value>   -> WeaponInfo.effectiveness    (weapon opportunity)
+## Both matter: WeaponStation.CalcOpportunityThreat multiplies the two.
+## Assets are matched by ScriptableObject .name (== jsonKey for units).
+
+## HLT-HEL / HLT LADS  (VehicleDefinition "LaserTrailer1", confirmed in dump)
+LaserTrailer1 roleIdentity antiSurface modify4 1
+LaserTrailer1 roleIdentity antiAir     modify4 1
+LaserTrailer1 roleIdentity antiMissile modify4 1
+LaserTrailer1 roleIdentity antiRadar   modify4 1
+
+## MSV LADS  (asset name unconfirmed - the auto-discovery pass will report the real one)
+Truck2-LADS roleIdentity antiSurface modify4 1
+Truck2-LADS roleIdentity antiAir     modify4 1
+Truck2-LADS roleIdentity antiMissile modify4 1
+Truck2-LADS roleIdentity antiRadar   modify4 1
+
+## 80kw Laser  (WeaponInfo "Laser_APS2", confirmed in dump)
+Laser_APS2 effectiveness antiSurface modify4 1
+Laser_APS2 effectiveness antiAir     modify4 1
+Laser_APS2 effectiveness antiMissile modify4 1
+Laser_APS2 effectiveness antiRadar   modify4 1
